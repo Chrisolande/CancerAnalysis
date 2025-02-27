@@ -111,7 +111,9 @@ We performed comprehensive EDA to understand data distribution and relationships
 - **ggplot2** for advanced visualizations
 - **gridExtra::grid.arrange()** to display multiple plots
 
-![Sample Visualization](https://via.placeholder.com/800x400?text=Cancer+Data+Visualization)
+![Sample Visualization](https://github.com/Chrisolande/CancerAnalysis/blob/main/results/confusion_matrix.png)
+![Sample Visualization](https://github.com/Chrisolande/CancerAnalysis/blob/main/results/model_race_results.png)
+![Sample Visualization](https://github.com/Chrisolande/CancerAnalysis/blob/main/results/Metric%20Distributions.png)
 
 ## ⚠️ Issues & Challenges
 
@@ -153,5 +155,5 @@ Contributions are welcome! Follow these steps:
 ---
 
 <div align="center">
-  <sub>Built with ❤️ by the Cancer Analysis Team</sub>
+  <sub>Built with ❤️ by the Chris Olande</sub>
 </div>
