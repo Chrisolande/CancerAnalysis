@@ -4,51 +4,36 @@
 This project focuses on analyzing cancer-related data using statistical and machine learning techniques. The goal is to identify patterns, perform predictive modeling, and visualize key insights that can help in understanding cancer characteristics.
 
 ## Objectives
-- Perform **exploratory data analysis (EDA)** to uncover trends and patterns.
-- Apply **statistical methods** and **machine learning models** to predict cancer outcomes.
-- Visualize key findings using **ggplot2**, **grid.arrange()**, and other visualization tools.
-  
+- Perform **exploratory data analysis (EDA)** to uncover trends and patterns
+- Apply **statistical methods** and **machine learning models** to predict cancer outcomes
+- Visualize key findings using **ggplot2**, **grid.arrange()**, and other visualization tools
 
 ## Dataset
-- **Source:** [https://www.kaggle.com/datasets/erdemtaha/cancer-data]
+- **Source:** [Cancer Data on Kaggle](https://www.kaggle.com/datasets/erdemtaha/cancer-data)
 - **Format:** CSV file with features such as:
-  - ID: Represents a unique ID of each patient.
-  - Diagnosis: Indicates the type of cancer. This property can take the values "M" (Malignant - Benign) or "B" (Benign - Malignant).
-  - radius_mean
-  - texture_mean
-  - perimeter_mean
-  - area_mean
-  - smoothness_mean
-  - compactness_mean
-  - concavity_mean
-  - concave points_mean: Represents the mean values of the cancer's visual characteristics.
-
-
-
-Other features contain specific ranges of average values of the features of the cancer image:
-
-  - radius_mean
-  - texture_mean
-  - perimeter_mean
-  - area_mean
-  - smoothness_mean
-  - compactness_mean
-  - concavity_mean
-  - concave points_mean
+  - **ID**: Unique identifier for each patient
+  - **Diagnosis**: Cancer type indicator ("M" for Malignant, "B" for Benign)
+  - **Feature means**: radius_mean, texture_mean, perimeter_mean, area_mean, smoothness_mean, compactness_mean, concavity_mean, concave points_mean
+  - **Feature ranges**: Additional metrics capturing specific ranges of average values from cancer images
 
 ## Installation & Setup
+
 ### Prerequisites
 Ensure you have the following installed:
 - **R** (version 4.4.2)
 - **RStudio** (Optional but recommended)
 - **Positron IDE** (To run the notebook)
-- **Required R Packages:**
-  ```r
-install.packages(c("tidyverse", "skimr", "tidymodels", "corrplot", "GGally", "viridis", "patchwork", "scales",  
-   "gridExtra", "ggridges", "vip", "ggbiplot", "factoextra", "finetune", "kernlab", "ranger", "xgboost", "janitor",  
-   "Boruta", "PCAtest", "summarytools", "tictoc", "kableExtra", "ggpubr", "betacal"))
 
-  ```
+### Required R Packages
+```r
+install.packages(c(
+  "tidyverse", "skimr", "tidymodels", "corrplot", "GGally", 
+  "viridis", "patchwork", "scales", "gridExtra", "ggridges", 
+  "vip", "ggbiplot", "factoextra", "finetune", "kernlab", 
+  "ranger", "xgboost", "janitor", "Boruta", "PCAtest", 
+  "summarytools", "tictoc", "kableExtra", "ggpubr", "betacal"
+))
+```
 
 ## Project Structure
 ```
@@ -66,39 +51,39 @@ Performed EDA to understand data distribution and relationships:
 - **Feature distributions & correlations** (`ggpairs()`, `corrplot`, `GGally`)
 
 ## Modeling Approaches
-### **Supervised Learning**
+
+### Supervised Learning
 - **Logistic Regression**: Baseline classifier
 - **Random Forest**: For feature importance analysis and classification
 - **Support Vector Machines (SVM)**: For classification tasks
-- **Xtreme Gradient Boosting**: For Classification tasks
-- **Bart**
-- **Naive Bayes**
-- **K-Nearest Neighbors**
-- **Decision Tree Classifier**
+- **XGBoost**: For classification tasks
+- **BART**: Bayesian Additive Regression Trees
+- **Naive Bayes**: Probabilistic classifier
+- **K-Nearest Neighbors**: Instance-based learning
+- **Decision Tree**: Interpretable classifier
 
-### **Unsupervised Learning**
+### Unsupervised Learning
 - **Clustering** (K-Means, Hierarchical Clustering)
-- **Dimensionality Reduction** Utilized the PCA algorithm to reduce the dimensions
+- **Dimensionality Reduction**: Utilized PCA algorithm to reduce dimensions
 
 ## Visualization
-- **ggplot2** for advanced visualizations.
-- **gridExtra::grid.arrange()** to display multiple plots.
+- **ggplot2** for advanced visualizations
+- **gridExtra::grid.arrange()** to display multiple plots
 
 ## Issues & Challenges
-- `grid.arrange()` sometimes squishes plots, consider displaying them individually.
-- Dataset imbalance affecting classification, handled with **SMOTE**.
-- Missing data requiring imputation strategies.
+- `grid.arrange()` sometimes squishes plots, consider displaying them individually
+- Dataset imbalance affecting classification, handled with **SMOTE**
+- Missing data requiring imputation strategies
 
 ## Future Work
-- Deploy a **Shiny dashboard** for interactive exploration.
-- Automate EDA and model training with **workflow automation tools**.
+- Deploy a **Shiny dashboard** for interactive exploration
+- Automate EDA and model training with **workflow automation tools**
 
 ## Contribution
 Contributions are welcome! Feel free to fork the repo, create a feature branch, and submit a pull request.
 
 ## License
-[Apache 2.0]
+[Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0)
 
 ## Contact
-For any inquiries or collaborations, reach out to [Chris Olande] via email at [olandechris@gmail.com].
-
+For any inquiries or collaborations, reach out to [Chris Olande](mailto:olandechris@gmail.com).
