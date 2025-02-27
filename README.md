@@ -28,7 +28,7 @@ Ensure you have the following installed:
   ```r
   install.packages(c("tidyverse", "ggplot2", "caret", "randomForest", "arules", "arulesViz", "gridExtra"))
   ```
-
+#--------------------------------------------------------
 ## Project Structure
 ```
 CancerAnalysis/
