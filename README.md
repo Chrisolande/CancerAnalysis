@@ -82,9 +82,12 @@ CancerAnalysis/
 ## 🔍 Exploratory Data Analysis (EDA)
 
 We performed comprehensive EDA to understand data distribution and relationships:
+- **Summary Statistics**: Used summary(), skimr::skim() for an overview of numerical and categorical features.
+- **Feature Distributions**: Visualized using histograms, density plots, and box plots to detect skewness and outliers.
+- **Correlation Analysis**: Employed corrplot and GGally::ggpairs() to examine relationships between numeric variables.
+- **Missing Values & Data Cleaning**: Checked for missing values and inconsistencies, ensuring data quality.
+- **Feature Interactions**: Used scatter plots and ridge plots (ggridges) to explore feature interactions.
 
-- **Summary statistics** (`summary()`, `skimr::skim()`)
-- **Feature distributions & correlations** (`ggpairs()`, `corrplot`, `GGally`)
 
 ## 🤖 Modeling Approaches
 
@@ -103,7 +106,7 @@ We performed comprehensive EDA to understand data distribution and relationships
 
 ### Unsupervised Learning
 
-- **Clustering** (K-Means, Hierarchical Clustering)
+- **Clustering** (Hierarchical Clustering)
 - **Dimensionality Reduction** (PCA) for feature space visualization
 
 ## 📊 Visualization
