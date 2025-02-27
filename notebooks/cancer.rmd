@@ -1,0 +1,1502 @@
+---
+title: "Advanced Regression Analysis using tidymodels"
+author: "Data Analyst"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    theme: cosmo
+    highlight: tango
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10, 
+  fig.height = 6,
+  out.width = "100%"
+)
+```
+
+
+```{r}
+librarian::shelf(tidyverse,skimr, tidymodels, corrplot, GGally, viridis, patchwork, scales,
+   gridExtra, ggridges, vip, ggbiplot, factoextra, finetune, kernlab, ranger, xgboost, janitor,
+    Boruta, PCAtest, summarytools, tictoc, kableExtra, ggpubr, betacal)
+```
+```{r}
+cancer_data <- read_csv("datasets/Cancer_Data.csv") %>%
+    select(-id, -starts_with("..."))
+```
+```{r}
+# Set custom theme
+
+theme_custom <- function() {
+  theme_minimal() +
+    theme(
+      plot.background = element_rect(fill = "white", color = NA),
+      panel.grid.major = element_line(color = "gray90"),
+      panel.grid.minor = element_blank(),
+      plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+      plot.subtitle = element_text(size = 12, color = "gray30", hjust = 0.5),
+      axis.title = element_text(size = 12, face = "bold"),
+      axis.text = element_text(size = 10),
+      legend.title = element_text(size = 12, face = "bold"),
+      legend.text = element_text(size = 10),
+      legend.position = "right"
+    )
+}
+
+theme_set(theme_custom())
+```
+```{r}
+# Convert diagnosis to factor (B = Benign, M = Malignant)
+cancer_data <- cancer_data %>% 
+  janitor::clean_names() %>% 
+  mutate(diagnosis = factor(if_else(diagnosis == "M", "Malignant", "Benign")))
+```
+
+```{r}
+skim(cancer_data) %>% 
+  as_tibble() %>% 
+  select(-n_missing) %>% 
+  kableExtra::kable() %>% 
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), 
+  font_size = 12) -> summary_table
+
+```
+```{r}
+# 1.1 Class Distribution
+diagnosis_counts <- cancer_data %>% 
+  count(diagnosis) %>%
+  mutate(percentage = n / sum(n) * 100)
+
+ggplot(cancer_data, aes(diagnosis, fill = diagnosis)) +
+    geom_bar(width = 0.7) +
+    geom_text(stat = "count", 
+             aes(label = after_stat(count)),
+             vjust = -0.5,
+             size = 4, fontface = "bold") +
+    scale_fill_viridis_d(option = "D") +
+    labs(title = "Distribution of Cancer Diagnosis",
+       subtitle = "Count of Malignant vs Benign Cases",
+       x = "Diagnosis Type",
+       y = "Number of Cases") +
+    theme_custom() +
+    theme(legend.position = "none") -> diagnosis_plot
+ggsave(filename = "/results/diagnosis_distribution.png", plot = diagnosis_plot, width = 8, height = 6, dpi = 300)
+
+diagnosis_plot
+```
+```{r}
+# 1.2 Feature Distribution by Diagnosis (for mean features)
+# Let's reshape the cancer_data for visualization
+mean_features <- cancer_data %>%
+  select(diagnosis, contains("_mean")) %>%
+  pivot_longer(cols = -diagnosis, 
+               names_to = "feature", 
+               values_to = "value") %>%
+  mutate(feature = str_remove(feature, "_mean"))
+
+# Visualize mean feature distributions
+p2 <- ggplot(mean_features, aes(x = value, fill = diagnosis)) +
+  geom_density(alpha = 0.6) +
+  facet_wrap(~ feature, scales = "free") +
+  labs(title = "Feature Distributions by Diagnosis (Mean Values)",
+       x = "Value", y = "Density") +
+  scale_fill_manual(values = c("Benign" = "#66c2a5", "Malignant" = "#fc8d62")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "bottom")
+ggsave(filename = "/results/mean_feature_distribution.png", plot = p2, width = 8, height = 6, dpi = 300)
+
+p2
+```
+```{r}
+library(corrr)
+# 1.3 Correlation Analysis (mean features)
+corr_matrix <- cancer_data %>%
+  select(contains("_mean")) %>%
+  correlate() %>%
+  rearrange()
+
+# Visualize correlation matrix
+p3 <- corr_matrix %>%
+  stretch() %>%
+  filter(abs(r) > 0.0) %>%
+  ggplot(aes(x = x, y = y, fill = r)) +
+  geom_tile() +
+  geom_text(aes(label = round(r, 2)), size = 2.5) +
+  scale_fill_gradient2(low = "#fc8d62", mid = "white", high = "#66c2a5", 
+                       midpoint = 0, limits = c(-1, 1)) +
+  labs(title = "Correlation Matrix of Mean Features",
+       x = "", y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave(filename = "/results/correlation(mean features).png", plot = p3, width = 8, height = 6, dpi = 300)
+p3
+```
+```{r}
+# 1.4 Box plots for key diagnostic features
+key_features <- c("radius_mean", "concave_points_mean", "perimeter_mean", "area_mean")
+key_cancer_data <- cancer_data %>%
+  select(diagnosis, all_of(key_features)) %>%
+  pivot_longer(cols = -diagnosis, 
+               names_to = "feature", 
+               values_to = "value")
+
+p4 <- ggplot(key_cancer_data, aes(x = diagnosis, y = value, fill = diagnosis)) +
+  geom_boxplot() +
+  facet_wrap(~ feature, scales = "free_y") +
+  labs(title = "Key Features by Diagnosis",
+       x = "Diagnosis", y = "Value") +
+  scale_fill_manual(values = c("Benign" = "#66c2a5", "Malignant" = "#fc8d62")) +
+  theme_minimal()
+  ggsave(filename = "/results/Key Features by Diagnosis.png", plot = p4, width = 8, height = 6, dpi = 300)
+p4
+```
+```{r}
+options(repr.plot.height = 12, repr.plot.width = 12)
+# select mean features for visualization
+mean_features <- cancer_data %>%
+  select(diagnosis, contains("mean"))
+
+# Reshape cancer_data for visualization
+mean_features_long <- mean_features %>%
+  pivot_longer(cols = -diagnosis, 
+               names_to = "feature", 
+               values_to = "Value")
+
+# Strip "mean_" prefix for cleaner visualization
+mean_features_long$feature <- gsub("mean_", "", mean_features_long$feature)
+
+# Create density plots for each feature by diagnosis
+ggplot(mean_features_long, aes(x = Value, fill = diagnosis)) +
+  geom_density(alpha = 0.6) +
+  facet_wrap(~ feature, scales = "free") +
+  theme_minimal() +
+  labs(title = "Distribution of mean features by diagnosis",
+       X = "Value", y = "Density") +
+  scale_fill_viridis_d(option = "plasma", begin = 0.2, end = 0.8) +
+  theme(legend.position = "bottom",
+        plot.title = element_text(hjust = 0.5, face = "bold"),
+        strip.background = element_rect(fill = "gray90"),
+        strip.text = element_text(face = "bold")) -> p5
+ggsave(filename = "/results/mean_feature_distribution_by_diagnosis.png", plot = p5, width = 8, height = 6, dpi = 300)
+p5
+```
+```{r}
+cancer_data %>%
+  pivot_longer(cols = c(radius_mean, texture_mean, perimeter_mean, area_mean),
+               names_to = "measurement",
+               values_to = "value") %>%
+  ggplot(aes(x = diagnosis, y = value, fill = diagnosis)) +
+  geom_boxplot() +
+  facet_wrap(~measurement, scales = "free_y") +
+  theme_custom() +
+  scale_fill_viridis_d(option = "plasma", begin = 0.2, end = 0.8) +
+  labs(title = "Key Measurements by Diagnosis",
+       
+       x = "Diagnosis",
+       y = "Value") -> p6
+ggsave(filename = "/results/Key Measurements by Diagnosis.png", plot = p6, width = 8, height = 6, dpi = 300)
+p6
+```
+```{r}
+## Feature Density
+
+selected_features <- c("radius_mean", "texture_mean", "perimeter_mean", "area_mean")
+
+cancer_data %>%
+    pivot_longer(cols = all_of(selected_features),
+               names_to = "feature",
+               values_to = "value") %>%
+    ggplot(aes(value, feature, fill = diagnosis)) +
+    geom_density_ridges(alpha = 0.7, scale = 0.9) +
+    scale_fill_viridis_d(option = "C") +
+    labs(title = "Distribution of Key Features by Diagnosis",
+       subtitle = "Density Ridges showing feature patterns",
+       x = "Value",
+       y = "Feature") +
+    theme_custom() -> p7
+ggsave(filename = "/results/Distribution of Key Features by Diagnosis.png", plot = p7, width = 8, height = 6, dpi = 300)
+p7
+```
+```{r}
+## Scatter Matrix
+
+cancer_data %>%
+    select(all_of(selected_features), diagnosis) %>%
+    ggpairs(aes(color = diagnosis),
+                  upper = list(continuous = wrap("cor", size = 3)),
+                  diag = list(continuous = wrap("densityDiag", alpha = 0.5)),
+                  lower = list(continuous = wrap("points", alpha = 0.5, size = 0.8))) +
+    scale_fill_viridis_d(option = "E") +
+    scale_color_viridis_d(option = "E") +
+    theme_custom() +
+    theme(axis.text = element_text(size = 8)) -> p8
+ggsave(filename = "/results/Scatter Matrix.png", plot = p8, width = 8, height = 6, dpi = 300)
+p8
+```
+```{r}
+cancer_data %>%
+  pivot_longer(cols = all_of(selected_features),
+               names_to = "measurement",
+               values_to = "value") %>%
+  ggplot(aes(diagnosis, value, fill = diagnosis)) +
+  geom_violin(alpha = 0.5) +
+  geom_boxplot(width = 0.2, alpha = 0.5) +
+  geom_jitter(alpha = 0.2, width = 0.1, size = 0.5) +
+  facet_wrap(~measurement, scales = "free_y",
+            labeller = labeller(measurement = label_wrap_gen(10))) +
+  scale_fill_viridis_d(option = "B") +
+  labs(title = "Distribution of Measurements by Diagnosis",
+       subtitle = "Showing violin plot, box plot, and individual points",
+       x = "Diagnosis",
+       y = "Value") +
+  theme_custom() +
+  theme(strip.text = element_text(size = 10, face = "bold")) -> p9
+ggsave(filename = "/results/Box & Violin Plot of Measurements by Diagnosis.png", plot = p9, width = 8, height = 6, dpi = 300)
+p9
+```
+
+## Feature Importance and Selection
+```{r}
+library(effsize)
+# Wilcoxon rank-sum test for each feature
+feature_importance <- data.frame(
+  feature = character(),
+  p_value = numeric(),
+  effect_size = numeric(),
+  stringsAsFactors = FALSE
+)
+
+numeric_features <- names(cancer_data)[names(cancer_data) != "diagnosis"]
+
+for (feature in numeric_features) {
+  # Wilcoxon test
+  test_result <- wilcox.test(cancer_data[[feature]] ~ cancer_data$diagnosis)
+  
+  # Calculate effect size (Cliff’s delta)
+  cliff_delta <- cliff.delta(cancer_data[[feature]], cancer_data$diagnosis)
+  
+  # Store results
+feature_importance <- rbind(feature_importance, 
+                             data.frame(feature = feature,
+                                        p_value = test_result$p.value,
+                                        effect_size = cliff_delta$estimate))
+}
+
+# Adjust p-values for multiple testing
+feature_importance$p_adjusted <- p.adjust(feature_importance$p_value, method = "BH")
+
+# Sort by effect size
+feature_importance <- feature_importance %>%
+  arrange(p_adjusted, desc(abs(effect_size)))
+
+# Display top features
+feature_importance %>%
+  head(15) %>%
+  mutate(p_value = format(p_value, scientific = TRUE, digits = 3),
+         p_adjusted = format(p_adjusted, scientific = TRUE, digits = 3),
+         effect_size = round(effect_size, 3)) %>%
+  kable(caption = "top features by Statistical Significance and Effect Size") %>%
+  scroll_box(width = "500px", height = "200px")-> feature_importance_tbl
+
+# Visualize feature importance
+feature_importance %>%
+  head(15) %>%
+  mutate(feature = reorder(feature, abs(effect_size))) %>%
+  ggplot(aes(x = abs(effect_size), y = feature, fill = -log10(as.numeric(p_adjusted)))) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  labs(title = "feature Importance by Effect Size",
+       x = "Absolute Effect Size", 
+       y = "feature",
+       fill = "-log10(adj.p)") +
+  scale_fill_viridis_c(option = "plasma") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) -> p10
+ggsave(filename = "/results/Feature Importance by Effect Size.png", plot = p10, width = 8, height = 6, dpi = 300)
+p10
+```
+
+```{r}
+# select top 8 features based on effect size
+top_features <- feature_importance$feature[1:8]
+
+# Create a table of test results
+test_results <- data.frame(
+  feature = character(),
+  benign_median = numeric(),
+  malignant_median = numeric(),
+  w_statistic = numeric(),
+  p_value = numeric(),
+  adj_p_value = numeric(),
+  effect_size = numeric(),
+  stringsAsFactors = FALSE
+)
+
+for (feature in top_features) {
+  # Extract cancer_data for each group
+  benign_values <- cancer_data[cancer_data$diagnosis == "Benign", feature][[1]]
+  malignant_values <- cancer_data[cancer_data$diagnosis == "Malignant", feature][[1]]
+  
+  # Perform Wilcoxon rank-sum test
+  test <- wilcox.test(benign_values, malignant_values)
+  
+  # Calculate effect size
+  cliff <- cliff.delta(cancer_data[[feature]], cancer_data$diagnosis)
+  
+  # Store results
+  test_results <- rbind(test_results,
+                       data.frame(feature = feature,
+                                  benign_median = median(benign_values),
+                                  malignant_median = median(malignant_values),
+                                  w_statistic = test$statistic,
+                                  p_value = test$p.value,
+                                  adj_p_value = NA,  # Will adjust later
+                                  effect_size = cliff$estimate))
+}
+
+# Adjust p-values for multiple testing
+test_results$adj_p_value <- p.adjust(test_results$p_value, method = "BH")
+
+test_results %>%
+  mutate(
+    feature = gsub("_", " ", feature),
+    benign_median = round(benign_median, 3),
+    malignant_media = round(malignant_median, 3),
+    w_statistic = round(w_statistic, 1),
+    p_value = format(p_value, scientific = TRUE, digits = 3),
+    adj_p_value = format(adj_p_value, scientific = TRUE, digits = 3),
+    effect_size = round(effect_size, 3)) -> test_results_formatted
+
+# Display table
+test_results_formatted %>%
+  kable(caption = "Mann-Whitney U test Results for top features") %>%
+  kable_styling(bootstrap_options = c("striped", "hover")) -> test_results_formatted
+```
+
+```{r}
+options(repr.plot.height = 12, repr.plot.width = 12)
+# select top 4 features for visualization
+top4_features <- feature_importance$feature[1:4]
+
+# Reshape data for visualization
+top4_long <- cancer_data %>%
+  select(diagnosis, all_of(top4_features)) %>%
+  pivot_longer(cols = -diagnosis, 
+               names_to = "feature", 
+               values_to = "Value")
+
+# Clean feature names for visualization
+top4_long$feature <- gsub("_", " ", top4_long$feature)
+
+# Create violin plots with box plots and individual points
+ggplot(top4_long, aes(x = diagnosis, y = Value, fill = diagnosis)) +
+  geom_violin(alpha = 0.6) +
+  geom_boxplot(width = 0.2, alpha = 0.8, outlier.shape = NA) +
+  geom_jitter(width = 0.1, alpha = 0.5, size = 1) +
+  facet_wrap(~ feature, scales = "free_y", ncol = 2) +
+  theme_minimal() +
+  labs(title = "top 4 Discriminating features",
+       subtitle = "Comparison between Benign and Malignant Cases",
+       X = "", y = "Value") +
+  scale_fill_viridis_d(option = "plasma", begin = 0.2, end = 0.8) +
+  theme(legend.position = "bottom",
+        plot.title = element_text(hjust = 0.5, face = "bold"),
+        plot.subtitle = element_text(hjust = 0.5),
+        strip.background = element_rect(fill = "gray90"),
+        strip.text = element_text(face = "bold")) -> discriminating_features
+ggsave(filename = "/results/Discriminating Features.png", plot = discriminating_features, width = 8, height = 6, dpi = 300)
+discriminating_features
+```
+## Hypothesis Tests and Effect Sizes
+
+### Hypothesis 1: Malignant tumors have significantly different mean radius compared to benign tumors
+
+$H_o$: No difference in radius_mean between malignant and benign tumors
+
+$H_1$: There is a significant difference in radius_mean between tumor types
+```{r}
+library(effectsize)
+
+radius_test <- function(data) {
+  # Test for normality
+  shapiro_test_m <- shapiro.test(data$radius_mean[data$diagnosis == "Malignant"])
+  shapiro_test_b <- shapiro.test(data$radius_mean[data$diagnosis == "Benign"])
+  
+  # If normal, use t-test; if not, use Mann-Whitney
+  if (shapiro_test_m$p.value > 0.05 && shapiro_test_b$p.value > 0.05) {
+    test_result <- t.test(radius_mean ~ diagnosis, data = data)
+    effect <- cohens_d(radius_mean ~ diagnosis, data = data)
+  } else {
+    test_result <- wilcox.test(radius_mean ~ diagnosis, data = data)
+    effect <- rank_biserial(radius_mean ~ diagnosis, data = data)
+  }
+  
+  list(test = test_result, effect_size = effect)
+}
+
+radius_test(cancer_data)
+```
+
+
+### Hypothesis 2: There are significant differences in cell characteristics across multiple features¶
+
+MANOVA test for multiple dependent variables
+
+```{r}
+manova_test <- function(data) {
+  dependent_vars <- data %>% 
+    select(radius_mean, texture_mean, perimeter_mean, area_mean)
+  
+  manova_result <- manova(as.matrix(dependent_vars) ~ diagnosis, data = data)
+  summary(manova_result)
+}
+
+manova_test(cancer_data)
+```
+```{r}
+library(dendextend)
+# Hierarchical feature clustering
+
+feature_dist <- dist(t(scale(cancer_data %>% 
+  select(-diagnosis))))
+feature_hclust <- hclust(feature_dist, method = "ward.D2")
+feature_dend <- as.dendrogram(feature_hclust)
+feature_dend <- color_branches(feature_dend, k = 5)
+png("/results/hierarchical_clustering.png", width = 8, height = 6, units = "in", res = 300)
+plot(feature_dend, main = "Hierarchical clustering of Cancer Dataset Features")
+dev.off()
+
+```
+```{r}
+## Feature Importance plot
+rf_recipe <- recipe(diagnosis ~ ., data = cancer_data) %>%
+  step_normalize(all_predictors())
+
+rf_model <- rand_forest() %>%
+  set_engine("ranger", importance = "impurity") %>%
+  set_mode("classification")
+
+rf_wflow <- workflow() %>%
+  add_recipe(rf_recipe) %>%
+  add_model(rf_model)
+
+rf_fit <- rf_wflow %>%
+  fit(data = cancer_data)
+
+rf_fit %>%
+ extract_fit_parsnip() %>%
+ vi() %>%
+ mutate(Variable = fct_reorder(Variable, Importance)) -> importance_data
+
+ggplot(importance_data, aes(Importance, Variable)) +
+  geom_bar(stat = "identity", fill = viridis(1)) +
+  labs(title = "Feature Importance from Random Forest",
+       subtitle = "Showing most influential predictors",
+       x = "Importance",
+       y = "Feature") +
+  theme_custom() -> importance_plot
+ggsave(filename = "/results/Feature Importance From Random Forest.png", plot = importance_plot, width = 8, height = 6, dpi = 300)
+importance_plot
+```
+## Predictive Modelling
+```{r}
+# Prepare data for modeling
+set.seed(123)
+splits <- initial_split(cancer_data, prop = 0.75, strata = diagnosis)
+training <- training(splits)
+testing <- testing(splits)
+
+# Check class distribution in training and testing sets
+train_distribution <- table(training$diagnosis)
+test_distribution <- table(testing$diagnosis)
+
+cv_folds <- vfold_cv(training, v = 10, strata = diagnosis)
+train_distribution_df <- as.data.frame(train_distribution)
+colnames(train_distribution_df) <- c("diagnosis", "count")
+train_distribution_df$Percentage <- train_distribution_df$count / sum(train_distribution_df$count) * 100
+
+test_distribution_df <- as.data.frame(test_distribution)
+colnames(test_distribution_df) <- c("diagnosis", "count")
+test_distribution_df$Percentage <- test_distribution_df$count / sum(test_distribution_df$count) * 100
+
+# Display class distribution
+cat("training Set Distribution:\n")
+train_distribution_df %>%
+  kable() %>% 
+  print()
+
+cat("\ntesting Set Distribution:\n")
+test_distribution_df %>%
+  kable() %>% 
+  print()
+```
+## Logistic Regression model
+```{r}
+library(car)
+logistic_reg_glm_spec <-
+  logistic_reg() %>%
+  set_engine('glm')
+
+# select features for the model based on our analysis
+# Use top features and avoid highly correlated ones
+model_features <- c("concavity_mean", "concave_points_mean", "perimeter_mean", 
+                   "texture_mean", "smoothness_mean", "symmetry_mean")
+
+# Formula for the model
+formula <- as.formula(paste("diagnosis ~", paste(model_features, collapse = " + ")))
+
+log_reg_fit <- logistic_reg_glm_spec %>% 
+  fit(formula, data = training)
+# Fit logistic regression model
+#logistic_model <- glm(formula, data = training, family = "binomial")
+
+# Model summary
+summary(log_reg_fit$fit)
+
+# Check for multicollinearity
+vif_values <- vif(log_reg_fit$fit)
+vif_df <- data.frame(
+  feature = names(vif_values),
+  Vif = vif_values
+)
+
+# Display Vif values
+vif_df %>%
+  arrange(desc(Vif)) %>%
+  kable(caption = "Variance Inflation Factors (Vif) for Model features") %>%
+  kable_styling(bootstrap_options = c("striped", "hover")) -> vif_df
+
+
+```
+```{r}
+# Check for multicollinearity
+vif_values <- vif(log_reg_fit$fit)
+vif_df <- data.frame(
+  feature = names(vif_values),
+  Vif = vif_values
+)
+
+# Display Vif values
+vif_df %>%
+  arrange(desc(Vif)) %>%
+  kable(caption = "Variance Inflation Factors (Vif) for Model features") %>%
+  kable_styling(bootstrap_options = c("striped", "hover")) -> vif_df
+```
+### Model Evaluation
+```{r}
+library(pROC)
+# Make predictions on test set
+predictions <- predict(log_reg_fit, new_data = testing) %>% 
+  bind_cols(testing)
+probabilities <- predict(log_reg_fit, testing, type = "prob") %>% 
+  bind_cols(testing)
+# Confusion matrix
+conf_matrix <- conf_mat(predictions, truth = diagnosis, estimate= .pred_class)
+conf_matrix
+
+calculate_metrics <- function(pred_df, truth_col, pred_col) {
+  # Convert column names to symbols
+  truth_sym <- sym(truth_col)
+  pred_sym <- sym(pred_col)
+  
+  # Ensure the columns are factors with the same levels
+  pred_df <- pred_df %>%
+    mutate(
+      !!truth_col := factor(!!truth_sym),
+      !!pred_col := factor(!!pred_sym)
+    )
+  
+  # Calculate metrics one by one to avoid errors
+  acc <- pred_df %>% accuracy(truth = !!truth_sym, estimate = !!pred_sym)
+  sens <- pred_df %>% sensitivity(truth = !!truth_sym, estimate = !!pred_sym, event_level = "second")
+  spec <- pred_df %>% specificity(truth = !!truth_sym, estimate = !!pred_sym, event_level = "second")
+  ppv_val <- pred_df %>% ppv(truth = !!truth_sym, estimate = !!pred_sym, event_level = "second")
+  npv_val <- pred_df %>% npv(truth = !!truth_sym, estimate = !!pred_sym, event_level = "second")
+  f1 <- pred_df %>% f_meas(truth = !!truth_sym, estimate = !!pred_sym, event_level = "second")
+  
+  # Combine all metrics
+  bind_rows(
+    acc,
+    sens,
+    spec,
+    ppv_val,
+    npv_val,
+    f1
+  )
+}
+
+metrics_table <- calculate_metrics(
+   pred_df = predictions,
+   truth_col = "diagnosis", 
+   pred_col = ".pred_class"
+ ) %>% 
+  select(.metric, .estimate) %>% 
+  rename(metric = .metric, value = .estimate)
+
+# Display metrics
+metrics_table %>%
+  mutate(value = round(value, 4)) %>%
+  kable(caption = "Model Performance Metrics")
+
+
+roc_obj <- roc(testing$diagnosis, probabilities$.pred_Malignant)
+auc_value <- auc(roc_obj)
+# plot ROC curve
+ggroc(roc_obj, colour = "#440154", size = 1.5) +
+  geom_abline(intercept = 1, slope = 1, linetype = "dashed", color = "gray40") +
+  annotate("text", x = 0.75, y = 0.25, 
+           label = paste("AUC =", round(auc_value, 3)), 
+           size = 5, color = "#440154") +
+  theme_minimal() +
+  labs(title = "ROC Curve for Logistic Regression Model",
+       x = "False Positive Rate (1 – Specificity)",  
+       y = "True Positive Rate (Sensitivity)") +  
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+ggsave(filename = "/results/ROC_Curve_Logistic_Regression.png", width = 8, height = 6, dpi = 300)
+
+```
+### Feature Importance in model
+```{r}
+# Extract coefficients
+coefs <- tidy(log_reg_fit)
+coef_df <- data.frame(
+  feature = coefs$term,
+  coefficient = coefs$estimate,
+  std_Error = coefs$std.error,
+  z_value = coefs$statistic,
+  p_value = coefs$p.value
+)
+
+# Remove intercept
+coef_df <- coef_df[-1, ]
+
+# Calculate odds ratios
+coef_df <- coef_df %>%
+  mutate(
+    Odds_Ratio = exp(coefficient),
+    OR_Lower_CI = exp(coefficient - 1.96 * std_Error),
+    OR_Upper_CI = exp(coefficient + 1.96 * std_Error),
+    Significance = case_when(
+      p_value < 0.001 ~ "***",
+      p_value < 0.01  ~ "**",
+      p_value < 0.05  ~ "*",
+      TRUE            ~ ""
+    )
+  )
+
+# Format feature names
+coef_df$feature <- gsub("_", " ", coef_df$feature)
+
+# Order by absolute coefficient value
+coef_df <- coef_df %>% arrange(desc(abs(coefficient)))
+
+# Create formatted table
+coef_table <- coef_df %>%
+  mutate(
+    Odds_Ratio = round(Odds_Ratio, 3),
+    OR_Lower_CI = round(OR_Lower_CI, 3),
+    OR_Upper_CI = round(OR_Upper_CI, 3),
+    P_value = format(p_value, scientific = TRUE, digits = 3),
+    `95% CI` = paste0("(", OR_Lower_CI, " – ", OR_Upper_CI, ")")
+  ) %>%
+  select(feature, Odds_Ratio, '95% CI', p_value, Significance) %>%
+  kable(caption = "Odds Ratios for Model Features") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
+# Visualize coefficients
+ggplot(coef_df, aes(x = coefficient, y = reorder(feature, abs(coefficient)), fill = coefficient > 0)) +
+  geom_bar(stat = "identity") +
+  geom_errorbarh(aes(xmin = coefficient - 1.96 * std_Error, 
+                     xmax = coefficient + 1.96 * std_Error), 
+                 height = 0.2) +
+  theme_minimal() +
+  labs(title = "Feature Coefficients in Logistic Regression Model",
+       subtitle = "With 95% Confidence Intervals",
+       x = "Coefficient Value", 
+       y = "Feature") +
+  scale_fill_manual(values = c("red", "blue"), 
+                    name = "Direction", 
+                    labels = c("Negative", "Positive")) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+        plot.subtitle = element_text(hjust = 0.5)) -> feature_coefs_plot
+        ggsave(filename = "/results/Feature Coefficient Plot.png", plot = feature_coefs_plot, width = 8, height = 6, dpi = 300)
+feature_coefs_plot
+```
+# Modelling with PCA
+```{r}
+features <- cancer_data %>%
+ select(-diagnosis)
+
+target <- cancer_data$diagnosis
+```
+```{r}
+# Perform PCA
+pca_result <- prcomp(features, scale. = TRUE)
+summarize_pca <- function(pca_obj){
+  # Calculate variance explained
+  var_explained <- pca_obj$sdev^2 / sum(pca_obj$sdev^2)
+  cum_var_explained <- cumsum(var_explained)
+
+  # Create summary dataframe
+  pca_summary <- data.frame(
+    PC = paste0("PC", 1:length(var_explained)),
+    var_explained = var_explained,
+    cum_var_explained = cum_var_explained)
+  
+  return(pca_summary)
+}
+
+pca_summary <- summarize_pca(pca_result)
+
+# Plot Scree Plot
+plot_scree <- function(pca_summary){
+  ggplot(pca_summary, aes(PC)) +
+    geom_line(aes(y = var_explained), fill = viridis(1)) +
+    geom_col(aes(y = cum_var_explained, group = 1), color = "red") +
+    geom_point(aes(y = cum_var_explained), color = "red") +
+    scale_y_continuous(
+      name = "Proportion of Variance Explained",
+      sec.axis = sec_axis(~., name = "Cumulative Proportion")
+    ) +
+    labs(title = "Scree Plot with Cumulative Variance",
+          x = "Principal Component") +
+    theme_custom() +
+    theme(axis.text.x = element_text(angle = 45))
+}
+
+plot_pca_biplot <- function(pca_obj, data, target) {
+  # Get PC scores
+  scores <- as.data.frame(pca_obj$x)
+  scores$diagnosis <- target
+  
+  # Create biplot
+  ggplot(scores, aes(x = PC1, y = PC2, color = diagnosis)) +
+    geom_point(alpha = 0.6) +
+    stat_ellipse(level = 0.95) +
+    scale_color_viridis_d() +
+    labs(title = "PCA Biplot",
+         x = paste0("PC1 (", round(pca_summary$var_explained[1] * 100, 1), "%)"),
+         y = paste0("PC2 (", round(pca_summary$var_explained[2] * 100, 1), "%)")) +
+    theme_minimal()
+}
+
+# Calculate feature contributions
+feature_contributions <- as.data.frame(abs(pca_result$rotation)) %>%
+  mutate(feature = rownames(.)) %>%
+  pivot_longer(-feature, names_to = "PC", values_to = "contribution")
+
+# Plot feature contributions
+plot_feature_contributions <- function(feature_contributions) {
+  feature_contributions %>%
+    filter(PC %in% c("PC1", "PC2", "PC3")) %>%
+    ggplot(aes(x = reorder(feature, contribution), y = contribution, fill = PC)) +
+    geom_col(position = "dodge") +
+    coord_flip() +
+    scale_fill_viridis_d() +
+    labs(title = "Feature Contributions to Principal Components",
+         x = "Feature",
+         y = "Absolute Contribution") +
+    theme_minimal()
+}
+```
+```{r}
+ggsave(filename = "/results/PCA Summary.png", plot = plot_scree(pca_summary), width = 8, height = 6, dpi = 300)
+ggsave(filename = "/results/feature_contributions.png", plot = plot_feature_contributions(feature_contributions), width = 8, height = 6, dpi = 300)
+ggsave(filename = "/results/PCA Biplot.png", plot = plot_pca_biplot(pca_result, cancer_data, cancer_data$diagnosis), width = 8, height = 6, dpi = 300)
+```
+```{r}
+plot_scree(pca_summary) + plot_pca_biplot(pca_result, cancer_data, cancer_data$diagnosis) / plot_feature_contributions(feature_contributions)
+```
+```{r}
+# Function to perform PCA analysis with Kaiser criterion
+analyze_pca_kaiser <- function(data) {
+  # Perform PCA
+  pca_result <- prcomp(data, scale. = TRUE)
+  
+  # Calculate eigenvalues
+  eigenvalues <- pca_result$sdev^2
+  
+  # Create Kaiser criterion analysis
+  kaiser_analysis <- data.frame(
+    Component = paste0("PC", 1:length(eigenvalues)),
+    Eigenvalue = eigenvalues,
+    Variance_Explained = eigenvalues / sum(eigenvalues),
+    Cumulative_Variance = cumsum(eigenvalues / sum(eigenvalues)),
+    Meets_Kaiser = eigenvalues > 1
+  ) %>%
+    mutate(
+      Criterion = ifelse(Meets_Kaiser, "Above Kaiser Criterion", "Below Kaiser Criterion")
+    )
+  
+  # Count components meeting Kaiser criterion
+  n_components_kaiser <- sum(eigenvalues > 1)
+  
+  # Create visualization
+  kaiser_plot <- ggplot(kaiser_analysis, aes(x = Component, y = Eigenvalue, fill = Criterion)) +
+    geom_col() +
+    geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
+    scale_fill_viridis_d() +
+    labs(
+      title = "Eigenvalues with Kaiser Criterion",
+      subtitle = paste("Components with eigenvalue > 1:", n_components_kaiser),
+      x = "Principal Component",
+      y = "Eigenvalue"
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      plot.subtitle = element_text(size = 10, color = "darkgray")
+    )
+  
+  # Create variance explained plot
+  variance_plot <- ggplot(kaiser_analysis, aes(x = Component)) +
+    geom_line(aes(y = Cumulative_Variance, group = 1), color = "blue") +
+    geom_point(aes(y = Cumulative_Variance), color = "blue") +
+    geom_col(aes(y = Variance_Explained, fill = Criterion), alpha = 0.5) +
+    scale_fill_viridis_d() +
+    labs(
+      title = "Variance Explained by Principal Components",
+      x = "Principal Component",
+      y = "Proportion of Variance"
+    ) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+  # Calculate summary statistics
+  summary_stats <- list(
+    n_components_kaiser = n_components_kaiser,
+    variance_explained_kaiser = sum(kaiser_analysis$Variance_Explained[kaiser_analysis$Meets_Kaiser]),
+    components_summary = kaiser_analysis
+  )
+  
+  # Return results
+  return(list(
+    pca_result = pca_result,
+    kaiser_analysis = kaiser_analysis,
+    kaiser_plot = kaiser_plot,
+    variance_plot = variance_plot,
+    summary_stats = summary_stats
+  ))
+}
+
+
+# Prepare data for PCA (remove ID and target variable)
+pca_data <- cancer_data %>%
+  select(-diagnosis)
+
+# Perform analysis
+pca_analysis <- analyze_pca_kaiser(pca_data)
+
+# Print summary
+print("Summary of Kaiser Criterion Analysis:")
+print(paste("Number of components suggested by Kaiser criterion:",
+            pca_analysis$summary_stats$n_components_kaiser))
+print(paste("Cumulative variance explained by Kaiser components:",
+            round(pca_analysis$summary_stats$variance_explained_kaiser * 100, 2), "%"))
+
+# Display full component summary
+print("\nDetailed Component Analysis:")
+print(pca_analysis$kaiser_analysis %>%
+        select(Component, Eigenvalue, Variance_Explained, Meets_Kaiser) %>%
+        head(pca_analysis$summary_stats$n_components_kaiser))
+
+# Combine plots
+combined_plot <- gridExtra::grid.arrange(
+  pca_analysis$kaiser_plot,
+  pca_analysis$variance_plot,
+  ncol = 1
+)
+
+# Function to get rotations for Kaiser-selected components
+get_kaiser_components <- function(pca_result, kaiser_analysis) {
+  n_components <- sum(kaiser_analysis$Meets_Kaiser)
+  
+  # Get rotation matrix for selected components
+  rotations <- pca_result$rotation[, 1:n_components, drop = FALSE]
+  
+  # Create summary dataframe
+  rotation_summary <- as.data.frame(rotations) %>%
+    mutate(Feature = rownames(.)) %>%
+    pivot_longer(
+      cols = -Feature,
+      names_to = "Component",
+      values_to = "Loading"
+    ) %>%
+    arrange(Component, desc(abs(Loading)))
+  
+  return(rotation_summary)
+}
+
+# Get loadings for Kaiser components
+kaiser_loadings <- get_kaiser_components(pca_analysis$pca_result, 
+                                       pca_analysis$kaiser_analysis)
+
+# Create loadings plot
+loadings_plot <- kaiser_loadings %>%
+  ggplot(aes(x = reorder(Feature, abs(Loading)), y = Loading, fill = Loading)) +
+  geom_col() +
+  facet_wrap(~Component) +
+  scale_fill_viridis() +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(
+    title = "Feature Loadings for Kaiser-Selected Components",
+    x = "Feature",
+    y = "Loading"
+  )
+
+# Return results as a list
+results <- list(
+  analysis = pca_analysis,
+  loadings = kaiser_loadings,
+  loadings_plot = loadings_plot
+)
+
+ggsave(filename = "/results/Loadings Plot.png", plot = loadings_plot, width = 8, height = 6, dpi = 300)
+```
+```{r}
+# Create the PCA recipe
+pca_prep <- recipe(diagnosis~., data =training) |> 
+  step_normalize(all_predictors()) |> 
+  step_pca(all_predictors(), num_comp = 6) |> 
+  prep()
+```
+```{r}
+# Visualize the contribution of variables to the components
+
+tidied_pca <- tidy(pca_prep, 2)
+tidied_pca |> 
+  filter(component %in% paste0("PC", 1:6)) |> 
+  mutate(component = fct_inorder(component)) |> 
+  ggplot(aes(value, terms, fill = terms)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~component, nrow = 1)+
+  labs(y = NULL) -> pca_contribution_plot
+
+pca_contribution_plot
+ggsave(
+  filename = "pca_variable_contributions.png", 
+  plot = pca_contribution_plot, 
+  path = "/results/", 
+  width = 12,  
+  height = 6, 
+  dpi = 300   
+)
+```
+```{r}
+library(tidytext)
+
+tidied_pca %>%
+  filter(component %in% paste0("PC", 1:6)) %>%
+  group_by(component) %>%
+  top_n(8, abs(value)) %>%
+  ungroup() %>%
+  mutate(terms = reorder_within(terms, abs(value), component)) %>%
+  ggplot(aes(abs(value), terms, fill = value > 0)) +
+  geom_col() +
+  facet_wrap(~component, scales = "free_y") +
+  scale_y_reordered() +
+  labs(
+    x = "Absolute value of contribution",
+    y = NULL, fill = "Positive?"
+  ) -> top8_feature_contribution
+
+top8_feature_contribution
+
+  ggsave(
+    filename = "top 8 feature contribution.png", 
+    plot = top8_feature_contribution, 
+    path = "/results/", 
+    width = 12,  # Adjust as needed
+    height = 6, # Adjust as needed
+    dpi = 300   # Adjust as needed
+  )
+```
+
+```{r}
+juice(pca_prep) %>%
+  ggplot(aes(PC1, PC2, label = diagnosis)) +
+  geom_point(aes(color = diagnosis), alpha = 0.7, size = 2) +
+  geom_text(check_overlap = TRUE, hjust = "inward", family = "IBMPlexSans") +
+  labs(color = NULL) -> pca_plot
+
+print(pca_plot)
+```
+```{r}
+pca_plot
+```
+```{r}
+ggsave(
+  filename = "pca separation plot.png",
+  plot = pca_plot,
+  path = "/results/",
+  width = 10,  # Adjust as needed
+  height = 8, # Adjust as needed
+  dpi = 300   # Adjust as needed
+)
+```
+```{r}
+cancer_recipe <- recipe(diagnosis ~ ., data = training) %>%
+  # Remove highly correlated features
+  step_corr(all_predictors(), threshold = 0.9) %>%
+  # Center and scale all predictors
+  step_center(all_predictors()) %>%
+  step_scale(all_predictors()) %>%
+  # Handle class imbalance
+  themis::step_smote(diagnosis) %>%
+  # Perform principal component analysis for dimension reduction and for visualization
+  step_pca(all_predictors(), num_comp = 6, prefix = "PC")
+```
+```{r}
+library(doParallel)
+library(earth)
+library(baguette)
+library(discrim)
+cl <- makePSOCKcluster(detectCores() - 1)
+registerDoParallel(cl)
+
+tic()
+rf_spec <- rand_forest(
+  mtry = tune(),
+  trees = 1000,
+  min_n = tune()
+) %>%
+  set_engine("ranger", importance = "impurity") %>%
+  set_mode("classification")
+
+
+xgb_spec <- boost_tree(
+  trees = 1000,
+  tree_depth = tune(),
+  min_n = tune(),
+  loss_reduction = tune(),
+  sample_size = tune(),
+  mtry = tune(),
+  learn_rate = tune()
+) %>%
+  set_engine("xgboost") %>%
+  set_mode("classification")
+
+svm_spec <- svm_rbf(
+  cost = tune(),
+  rbf_sigma = tune()
+) %>%
+  set_engine("kernlab") %>%
+  set_mode("classification")
+
+log_spec <- logistic_reg(
+  penalty = tune(),
+  mixture = tune()
+) %>%
+  set_engine("glmnet") %>%
+  set_mode("classification")
+
+bart_spec <-
+  bart(trees = tune(), prior_terminal_node_coef = tune(), prior_terminal_node_expo = tune(), prior_outcome_range = tune()) %>%
+  set_engine('dbarts') %>%
+  set_mode('classification')
+
+dt_spec <-
+  decision_tree(tree_depth = tune(), min_n = tune(), cost_complexity = tune()) %>%
+  set_engine('rpart') %>%
+  set_mode('classification')
+
+nnet_spec <-
+  mlp(hidden_units = tune(), penalty = tune(), epochs = tune()) %>%
+  set_engine('nnet') %>%
+  set_mode('classification')
+
+naivebayes_spec <-
+  naive_Bayes(smoothness = tune(), Laplace = tune()) %>%
+  set_engine('naivebayes') %>% 
+  set_mode("classification")
+
+kknn_spec <-
+  nearest_neighbor(neighbors = tune(), weight_func = tune(), dist_power = tune()) %>%
+  set_engine('kknn') %>%
+  set_mode('classification')
+
+
+# Define workflow sets
+cancer_workflows <- workflow_set(
+  preproc = list(cancer_recipe),
+  models = list(
+    rf = rf_spec,
+    logistic = log_spec,
+    svm = svm_spec,
+    xgb = xgb_spec,
+    bart = bart_spec,
+    decision_tree = dt_spec,
+    nnet = nnet_spec,
+    naivebayes = naivebayes_spec,
+    nearest_neighbors = kknn_spec
+  )
+)
+
+metrics <- metric_set(yardstick::accuracy, roc_auc, yardstick::sensitivity, yardstick::specificity, brier_class)
+
+race_ctrl <- control_race(
+  save_pred = TRUE,
+  parallel_over = "everything",
+  save_workflow = TRUE
+)
+race_results <- cancer_workflows %>%
+  workflow_map(
+    seed = 42,
+    fn = "tune_race_anova",
+    resamples = cv_folds,
+    grid = 25,
+    metrics = metrics,
+    control = race_ctrl
+  )
+stopCluster(cl)
+toc()
+
+
+```
+```{r}
+race_results <- race_results %>% 
+  mutate(wflow_id = gsub("recipe_", "", wflow_id))
+race_results
+```
+```{r}
+race_results %>% 
+  rank_results() %>% 
+  filter(.metric == "accuracy") %>% 
+  select(model, .config, accuracy = mean, rank)
+```
+```{r}
+autoplot(race_results,
+  rank_metric = "accuracy",
+  metric = "accuracy",
+  select_best = TRUE) +
+  geom_text(aes(y = mean - 1/3, label = wflow_id), angle = 90, hjust = 1)  -> race_plot
+
+race_plot
+```
+```{r}
+ggsave(
+  filename = "model_race_results.png",
+  plot = race_plot,
+  path = "/results/",
+  width = 12, 
+  height = 8, 
+  dpi = 300   
+)
+```
+```{r}
+# Extract all metrics and predictions
+all_metrics <- collect_metrics(race_results)
+all_predictions <- collect_predictions(race_results)
+# 1. Overall Performance Comparison
+overall_comparison <- race_results %>%
+  collect_metrics() %>%
+  group_by(wflow_id, .metric) %>%
+  summarise(
+    mean_perf = mean(mean),
+    sd_perf = sd(mean),
+    .groups = "drop"
+  ) %>%
+  arrange(wflow_id, mean_perf)
+
+overall_comparison
+```
+```{r}
+# 2. ROC Curves Comparison
+roc_curves <- all_predictions %>%
+  group_by(wflow_id) %>%
+  roc_curve(truth = diagnosis, .pred_Malignant) %>%
+  autoplot() +
+  theme_custom() +
+  labs(
+      title = "Roc-Auc Curves Comparison",
+      color = "Model"
+    )
+ggsave(
+      filename = "Roc-Auc curves.png",
+      plot = roc_curves,
+      path = "/results/",
+      width = 12,  
+      height = 8, 
+      dpi = 300   
+)
+
+roc_curves
+```
+```{r}
+# 3. Precision-Recall Curves
+pr_curves <- all_predictions %>%
+  group_by(wflow_id) %>%
+  pr_curve(truth = diagnosis, .pred_Malignant) %>%
+  autoplot() +
+  theme_minimal() +
+  labs(
+    title = "Precision-Recall Curves Comparison",
+    color = "Model"
+  )
+
+  ggsave(
+    filename = "Precision-Recall curves.png",
+    plot = pr_curves,
+    path = "/results/",
+    width = 12,  
+    height = 8, 
+    dpi = 300   
+)
+pr_curves
+```
+
+```{r}
+# 4. Performance Distribution Boxplots
+metric_distributions <- all_metrics %>%
+  ggplot(aes(x = wflow_id, y = mean, fill = wflow_id)) +
+  geom_boxplot() +
+  facet_wrap(~.metric, scales = "free_y") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(
+    title = "Performance Distribution Across Models",
+    x = "Model",
+    y = "Metric Value"
+  )
+
+  ggsave(
+    filename = "Metric Distributions.png",
+    plot = metric_distributions,
+    path = "/results/",
+    width = 12,  
+    height = 8, 
+    dpi = 300   
+)
+metric_distributions
+```
+```{r}
+# 5. Model Calibration
+calibration_plots <- all_predictions %>%
+  group_by(wflow_id) %>%
+  mutate(pred_bin = cut(.pred_Malignant, breaks = seq(0, 1, by = 0.1))) %>%
+  group_by(wflow_id, pred_bin) %>%
+  summarise(
+    observed_prob = mean(diagnosis == "Malignant"),
+    predicted_prob = mean(.pred_Malignant),
+    .groups = "drop"
+  ) %>%
+  ggplot(aes(x = predicted_prob, y = observed_prob, color = wflow_id)) +
+  geom_line() +
+  geom_point() +
+  geom_abline(linetype = "dashed") +  # Ideal calibration line
+  theme_minimal() +
+  labs(title = "Model Calibration Plot", x = "Predicted Probability", y = "Observed Frequency")
+ggsave(
+  filename = "Model Calibration Plot.png",
+  plot = calibration_plots,
+  path = "/results/",
+  width = 12,  
+  height = 8, 
+  dpi = 300   
+)
+calibration_plots
+```
+```{r}
+# 6. Model Rankings
+model_rankings <- all_metrics %>%
+  group_by(.metric, wflow_id) %>%
+  summarise(mean = mean(mean), .groups = "drop") %>%
+  mutate(rank = rank(-mean)) %>%
+  pivot_wider(names_from = .metric, values_from = c(mean, rank)) %>%
+  arrange(rank_roc_auc) %>%
+  kable(caption = "Average model rankings based on selected metrics")
+
+print(model_rankings)
+
+```
+```{r}
+# Ensure `wflow_id` is a factor (categorical variable)
+all_metrics <- all_metrics %>%
+  mutate(wflow_id = as.factor(wflow_id))
+
+# Ensure each fold is treated as a blocking factor
+# Create `id` to represent the blocking factor (folds)
+all_metrics <- all_metrics %>%
+  mutate(id = rep(1:floor(n()/length(unique(wflow_id))),
+                  each = length(unique(wflow_id)), length.out = n()))
+
+# Filter only rows where `.metric` is "roc_auc"
+roc_metrics <- all_metrics %>%
+  filter(.metric == "roc_auc")
+
+# Ensure `mean` (roc_auc values) is numeric
+roc_metrics <- roc_metrics %>%
+  mutate(mean = as.numeric(mean))
+
+# Check for missing values
+missing_data <- roc_metrics %>%
+  group_by(id, wflow_id) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  pivot_wider(names_from = wflow_id, values_from = n)
+
+
+# Create properly formatted data for Friedman test
+friedman_data <- roc_metrics %>%
+  select(id, wflow_id, mean) %>%  
+  pivot_wider(
+    names_from = wflow_id,
+    values_from = mean
+  )
+
+
+# Perform Friedman test
+friedman_result <- friedman.test(as.matrix(friedman_data[,-1]))
+
+print("\nFriedman test results:")
+print(friedman_result)
+
+# If Friedman test is significant, perform post-hoc analysis
+if(friedman_result$p.value < 0.05) {
+  # Perform pairwise Wilcoxon signed rank tests with p-value adjustment
+  posthoc <- all_metrics %>%
+    wilcox_test(
+      mean ~ wflow_id,
+      paired = TRUE,
+      p.adjust.method = "bonferroni"
+    )
+  
+  print("\nPost-hoc analysis results:")
+  print(posthoc)
+}
+
+```
+
+```{r}
+# Stability Plot Analysis
+stability_plot <- all_metrics %>%
+  # Filter for relevant metrics
+  filter(.metric %in% c("accuracy", "roc_auc", "sensitivity", "specificity")) %>%
+  # Calculate stability metrics
+  group_by(wflow_id, .metric) %>%
+  summarise(
+    mean_perf = mean(mean),
+    sd_perf = sd(mean),
+    cv = sd_perf / mean_perf * 100,
+    .groups = "drop"
+  ) %>%
+  # Create plot
+  ggplot(aes(x = reorder(wflow_id, cv), y = cv, fill = .metric)) +
+  geom_col(position = position_dodge(width = 0.8),
+           width = 0.7,
+           color = "black",
+           alpha = 0.8) +
+  # Custom color palette
+  scale_fill_brewer(palette = "Set2",
+                    labels = c("Accuracy", "ROC-AUC", "Sensitivity", "Specificity")) +
+  # Formatting
+  scale_y_continuous(
+    #limits = c(0, max(cv) * 1.1),
+    labels = function(x) paste0(round(x, 1), "%"),
+    expand = expansion(mult = c(0, 0.05))
+  ) +
+  # Clean theme
+  theme_minimal(base_size = 12, base_family = "Arial") +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", margin = margin(b = 10)),
+    plot.subtitle = element_text(size = 12, color = "grey40", margin = margin(b = 20)),
+    plot.caption = element_text(size = 10, color = "grey40", margin = margin(t = 10)),
+    axis.title = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 11),
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1),
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 11),
+    legend.margin = margin(b = 10),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_line(color = "grey90"),
+    plot.margin = margin(20, 20, 20, 20)
+  ) +
+  # Labels
+  labs(
+    title = "Model Performance Stability Analysis",
+    subtitle = "Lower Coefficient of Variation (CV%) indicates more consistent performance across folds",
+    x = "Model Workflow",
+    y = "Coefficient of Variation (%)",
+    caption = "Note: CV% calculated across all cross-validation folds"
+  )
+
+ggsave(
+    filename = "Model Performance Stability Analysis.png",
+    plot = stability_plot,
+    path = "/results/",
+    width = 12,  
+    height = 8, 
+    dpi = 300   
+)
+stability_plot
+```
+```{r}
+performance_table <- overall_comparison %>%
+  arrange(desc(mean_perf)) %>% # Sort by performance
+  kable(format = "html", digits = 3, caption = "<span style='font-weight: bold; background-color: rgb(16, 133, 243); color: white; padding: 5px;'>Top Performing Models</span>") %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed")) %>%
+  row_spec(0, bold = TRUE) %>%  # Make header bold
+  column_spec(2:3, width = "15em") # Adjust column width
+# performance_table
+```
+```{r}
+best_results <- race_results %>% 
+  extract_workflow_set_result("nnet") %>% 
+  select_best(metric = "accuracy")
+
+print(best_results)
+
+
+```
+```{r}
+race_results %>% 
+  extract_workflow("nnet") %>% 
+  finalize_workflow(best_results) %>% 
+  last_fit(split = splits) -> final_fit
+
+```
+```{r}
+final_fit %>% 
+  collect_predictions() %>% 
+  conf_mat(truth = diagnosis, 
+      estimate = .pred_class) -> conf_mat
+
+confusion_matrix <- conf_mat %>%
+  autoplot(type = "heatmap") +
+  labs(title = "Confusion Matrix on Test Data") +
+  scale_fill_gradient(low = "#f7fbff", high = "#08306b") +
+  theme_minimal()
+ggsave(filename = "/results/confusion_matrix.png", plot = confusion_matrix,
+ width = 8, height = 6, dpi = 300)
+confusion_matrix
+
+final_metrics <- collect_metrics(final_fit)
+print(list(final_metrics, confusion_matrix))
+
+
+```
+```{r}
+final_workflow <- final_fit$.workflow[[1]]
+
+saveRDS(final_workflow, "nnet_final_model.rds")
+```
+```{r}
+library(sessioninfo)
+session_info(
+  pkgs = c("loaded", "attached", "installed")[1],
+  include_base = FALSE,
+  info = c("auto", "all", "platform", "packages", "python", "external"),
+  dependencies = NA,
+  to_file = FALSE
+)
+```
