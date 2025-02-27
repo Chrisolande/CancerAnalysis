@@ -81,7 +81,7 @@ CancerAnalysis/
 
 ## 🔍 Exploratory Data Analysis (EDA)
 
-We performed comprehensive EDA to understand data distribution and relationships:
+I performed comprehensive EDA to understand data distribution and relationships:
 - **Summary Statistics**: Used summary(), skimr::skim() for an overview of numerical and categorical features.
 - **Feature Distributions**: Visualized using histograms, density plots, and box plots to detect skewness and outliers.
 - **Correlation Analysis**: Employed corrplot and GGally::ggpairs() to examine relationships between numeric variables.
