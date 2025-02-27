@@ -177,5 +177,5 @@ Contributions are welcome! Follow these steps:
 ---
 
 <div align="center">
-  <sub>Built with ❤️ by the Chris Olande</sub>
+  <sub>Built with ❤️ by Chris Olande</sub>
 </div>
