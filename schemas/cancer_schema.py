@@ -1,0 +1,37 @@
+
+from pyspark.sql.types import StructType, StructField, StringType, DoubleType, IntegerType
+
+cancer_schema = StructType([
+    StructField("id", StringType(), True),
+    StructField("diagnosis", StringType(), True),
+    StructField("radius_mean", DoubleType(), True),
+    StructField("texture_mean", DoubleType(), True),
+    StructField("perimeter_mean", DoubleType(), True),
+    StructField("area_mean", DoubleType(), True),
+    StructField("smoothness_mean", DoubleType(), True),
+    StructField("compactness_mean", DoubleType(), True),
+    StructField("concavity_mean", DoubleType(), True),
+    StructField("concave_points_mean", DoubleType(), True),
+    StructField("symmetry_mean", DoubleType(), True),
+    StructField("fractal_dimension_mean", DoubleType(), True),
+    StructField("radius_se", DoubleType(), True),
+    StructField("texture_se", DoubleType(), True),
+    StructField("perimeter_se", DoubleType(), True),
+    StructField("area_se", DoubleType(), True),
+    StructField("smoothness_se", DoubleType(), True),
+    StructField("compactness_se", DoubleType(), True),
+    StructField("concavity_se", DoubleType(), True),
+    StructField("concave_points_se", DoubleType(), True),
+    StructField("symmetry_se", DoubleType(), True),
+    StructField("fractal_dimension_se", DoubleType(), True),
+    StructField("radius_worst", DoubleType(), True),
+    StructField("texture_worst", DoubleType(), True),
+    StructField("perimeter_worst", DoubleType(), True),
+    StructField("area_worst", DoubleType(), True),
+    StructField("smoothness_worst", DoubleType(), True),
+    StructField("compactness_worst", DoubleType(), True),
+    StructField("concavity_worst", DoubleType(), True),
+    StructField("concave_points_worst", DoubleType(), True),
+    StructField("symmetry_worst", DoubleType(), True),
+    StructField("fractal_dimension_worst", DoubleType(), True)
+])
