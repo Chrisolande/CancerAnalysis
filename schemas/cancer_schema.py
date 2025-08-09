@@ -2,7 +2,7 @@
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType, IntegerType
 
 cancer_schema = StructType([
-    StructField("id", StringType(), True),
+    StructField("id",IntegerType(), True),
     StructField("diagnosis", StringType(), True),
     StructField("radius_mean", DoubleType(), True),
     StructField("texture_mean", DoubleType(), True),
